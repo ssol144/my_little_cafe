@@ -52,6 +52,8 @@ export interface AlbumEntry {
 export interface GameState {
   version: number;
   createdAt: string;
+  /** ms timestamp of the last local save (used to compare with the cloud copy) */
+  savedAt: number;
   profileName: string;
   outfit: Outfit;
   gold: number;
@@ -116,6 +118,7 @@ export function createDefaultState(): GameState {
   return {
     version: SAVE_VERSION,
     createdAt: new Date().toISOString(),
+    savedAt: 0,
     profileName: '사장님',
     outfit: { species: 'wombat', skin: 0, hair: 0, apron: 'apron_cream', hat: 'hat_none', glasses: 'glasses_none', accessory: 'acc_none' },
     gold: 300,

@@ -51,6 +51,7 @@ Node.js 20 이상을 권장합니다(개발·검증은 Node 22에서 진행).
 | 출석 | 7일 주기 보상(놓쳐도 단계 유지), 연속·누적 출석, 월간 마일스톤 |
 | 추억 앨범 | 첫 손님·첫 단골·첫 PERFECT·시그니처 메뉴·확장·특별 손님 등을 **게임 화면 스냅샷**과 함께 자동 기록, 손님별 추억 보기 |
 | 저장 | localStorage 자동 저장(12초 주기·주요 이벤트·앱 백그라운드 전환 시), 백업 파일 내보내기/가져오기, 초기화 |
+| 계정·클라우드 저장 | 게스트 우선 + Google 계정 연동(Firebase Auth), Firestore 클라우드 세이브, 기기 간 충돌 선택, 계정 삭제. Firebase 설정이 없으면 기능 자체가 숨겨짐 → [docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md) |
 | 사운드 | WebAudio로 합성한 효과음·배경음(에셋 없음), 진동 피드백 |
 
 ## 프로젝트 구조
@@ -89,6 +90,14 @@ node scripts/e2e-systems.mjs         # 미니게임 8종 실제 입력, 직원 �
 # 개발 서버 대상: BASE_URL=http://localhost:5173 npm run test:e2e
 ```
 
+계정·클라우드 저장 테스트(20개 항목, Firebase 에뮬레이터 사용):
+
+```bash
+npx firebase emulators:start --only auth,firestore --project demo-mlc
+VITE_FIREBASE_API_KEY=demo-key VITE_FIREBASE_AUTH_DOMAIN=demo-mlc.firebaseapp.com VITE_FIREBASE_PROJECT_ID=demo-mlc VITE_FIREBASE_APP_ID=1:1:web:1 VITE_FIREBASE_EMULATOR=true npx vite --port 5174
+BASE_URL=http://localhost:5174 npm run test:cloud
+```
+
 Playwright + Chromium이 필요합니다. 테스트는 `?debug=1`일 때만 노출되는 `window.__game` 훅을 사용하며, 일반 플레이어 화면에는 디버그 UI가 없습니다.
 
 ## Android APK
@@ -106,6 +115,8 @@ npm run android:apk
 - Android Studio에서 열기: `npx cap open android`
 - 웹 코드 수정 후 반영: `npm run cap:sync`
 - 아이콘/스플래시 재생성: `node scripts/gen-android-assets.mjs`
+- 디버그 빌드는 저장소의 고정 개발 키(`android/app/debug.keystore`, 비밀번호 `android`)로 서명됩니다. 어디서 빌드해도 서명이 같아 **덮어쓰기 업데이트**가 되고, Firebase에 등록할 SHA-1도 고정입니다(`63:C0:84:CC:DE:C8:90:2E:32:07:54:2A:77:43:CB:42:8C:C7:BF:BE`). 이 키는 공개돼 있으므로 개발용으로만 쓰세요.
+- Google 로그인을 폰에서 쓰려면 `android/app/google-services.json`이 필요합니다 ([docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md) 5단계).
 - **출시용(release) APK/AAB**는 서명 키가 필요합니다. 키스토어(`*.jks`)는 저장소에 올리지 말고(.gitignore 처리됨) Android Studio의 *Build > Generate Signed Bundle/APK* 또는 CI 시크릿으로 관리하세요.
 
 ## 배포 (Vercel)
@@ -123,7 +134,11 @@ npm run android:apk
 |---|---|---|
 | `VITE_APP_VERSION` | 설정 화면 버전 표기 | `0.1.0` |
 | `VITE_ENABLE_DEBUG` | `true`면 디버그 훅 상시 노출 (운영에서는 `false`) | `false` |
-| `VITE_CLOUD_SAVE_URL` | 향후 클라우드 저장용 예약 변수. 현재 코드에서 사용하지 않음 | (비움) |
+| `VITE_FIREBASE_API_KEY` | Firebase 웹 앱 설정값 (공개 식별자) | (비움 = 계정 기능 숨김) |
+| `VITE_FIREBASE_AUTH_DOMAIN` | 〃 | (비움) |
+| `VITE_FIREBASE_PROJECT_ID` | 〃 | (비움) |
+| `VITE_FIREBASE_APP_ID` | 〃 | (비움) |
+| `VITE_FIREBASE_EMULATOR` | `true`면 로컬 Firebase 에뮬레이터 사용 (테스트 전용) | `false` |
 
 - 로컬: `.env.example`을 `.env`로 복사해 사용. `.env`는 `.gitignore`로 커밋되지 않습니다.
 - `VITE_` 접두사 변수는 **브라우저 번들에 그대로 포함**되므로 비밀 키를 넣으면 안 됩니다. 서버 비밀 값이 필요해지면 별도 백엔드(서버리스 함수 등)에서 처리해야 합니다.
@@ -134,7 +149,7 @@ npm run android:apk
 |---|---|
 | 2층·루프탑 확장 | 미구현(다층 맵·계단 이동 필요). UI에 노출하지 않음 |
 | 친구 교류 | 미구현. 싱글 플레이 전용, 저장 구조만 분리 |
-| 클라우드 저장·계정 | 미구현. `StorageAdapter` 확장 지점만 존재 |
+| 클라우드 저장·계정 | 구현됨(Firebase). 실제 Firebase 프로젝트 연결과 Android 네이티브 Google 로그인은 실기기 확인 필요 |
 | 영업 중 새로고침 | 진행 중이던 하루(손님·제조 중 메뉴)는 저장되지 않고 영업 전 상태로 돌아감. 재화·성장·꾸미기는 유지 |
 | 실기기 검증 | APK 빌드는 성공했으나 실제 Android 기기/에뮬레이터 실행 검증은 아직 하지 않음 |
 
@@ -142,5 +157,6 @@ npm run android:apk
 
 - three.js — MIT
 - Capacitor — MIT
+- Firebase JS SDK — Apache-2.0 · @capacitor-firebase/authentication — Apache-2.0
 - BM JUA 폰트(@fontsource/jua) — SIL Open Font License 1.1
 - 게임 코드·그래픽·사운드: 이 저장소에서 직접 작성/생성

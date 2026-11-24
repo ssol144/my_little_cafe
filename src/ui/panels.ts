@@ -1,5 +1,7 @@
 import type { Game, DaySummary } from '../game/Game';
 import type { Customer } from '../game/customers';
+import type { SaveSummary, Choice } from '../game/cloud';
+import { preloadFirebase } from '../platform/firebase';
 import { Sheets, Toasts, bindActs, el, $, type SheetHandle } from './dom';
 import { ICON, MENU_ICONS, stars } from './icons';
 import type { Hud } from './hud';
@@ -63,7 +65,10 @@ export class Panels {
   private editBar: HTMLElement | null = null;
   private editTab: 'storage' | 'theme' | 'expand' = 'storage';
 
+  private settingsHandle: SheetHandle | null = null;
+
   constructor(private game: Game, public sheets: Sheets, private toasts: Toasts, private hud: Hud) {
+    game.cloud.onChange = () => this.settingsHandle?.refresh();
     events.on('levelUp', (e) => {
       this.levelQueue.push(e);
       audio.play('levelup');
@@ -660,18 +665,20 @@ export class Panels {
   // ================================================================ settings
   settings() {
     const g = this.game;
-    this.sheets.open({
+    this.settingsHandle = this.sheets.open({
       title: '설정',
       icon: ICON.gear,
       cls: 'tall',
+      onClose: () => (this.settingsHandle = null),
       render: (body, h) => {
         const st = g.state.settings;
         const tg = (k: keyof typeof st, label: string) => `<label class="toggle-row"><span>${label}</span><button class="switch ${st[k] ? 'on' : ''}" data-act="toggle" data-k="${k}" role="switch" aria-checked="${!!st[k]}"><i></i></button></label>`;
         body.innerHTML = `
           ${tg('sfx', '효과음')}${tg('music', '배경 음악')}${tg('vibration', '진동')}${tg('shadows', '그림자 (끄면 저사양 기기에서 더 부드러워요)')}
           <div class="toggle-row"><span>하루 영업 시간</span><div class="seg">${[5, 6, 8, 10].map((m) => `<button class="${st.dayMinutes === m ? 'on' : ''}" data-act="day" data-m="${m}">${m}분</button>`).join('')}</div></div>
+          ${this.accountHtml()}
           <h3 class="section">데이터</h3>
-          <p class="note">플레이 데이터는 이 기기(브라우저)에 자동 저장돼요. 기기를 바꿀 때는 백업 파일을 내보내 가져오세요.</p>
+          <p class="note">플레이 데이터는 이 기기에 자동 저장돼요.${g.cloud.enabled ? ' Google 계정을 연동하면 클라우드에도 저장돼요.' : ' 기기를 바꿀 때는 백업 파일을 내보내 가져오세요.'}</p>
           <div class="row gap wrap"><button class="btn" data-act="export">백업 내보내기</button><button class="btn" data-act="import">백업 가져오기</button><button class="btn ghost danger" data-act="reset">데이터 초기화</button></div>
           <input type="file" accept="application/json,.json" class="hidden import-in"/>
           <h3 class="section">정보</h3>
@@ -716,9 +723,34 @@ export class Panels {
             window.setTimeout(() => URL.revokeObjectURL(a.href), 2000);
           },
           import: () => fileIn.click(),
+          link: async () => {
+            await g.cloud.link();
+          },
+          syncnow: async () => {
+            await g.saveNow();
+            if (await g.cloud.uploadNow()) this.toasts.show('클라우드에 저장했어요.', 'good');
+            else this.toasts.show('클라우드 저장에 실패했어요. 네트워크를 확인해 주세요.', 'warn');
+          },
+          signout: async () => {
+            if (!(await this.sheets.confirm('로그아웃할까요? 이 기기의 데이터는 그대로 남고, 클라우드 저장은 멈춰요.', '로그아웃'))) return;
+            await g.cloud.signOut();
+            this.toasts.show('로그아웃했어요.', 'info');
+          },
+          delacct: async () => {
+            if (!(await this.sheets.confirm('계정을 삭제할까요?<br/><small>클라우드 저장 데이터와 로그인 정보가 영구 삭제돼요. 이 기기의 게임 데이터는 남아요.</small>', '계정 삭제'))) return;
+            if (!(await this.sheets.confirm('정말 삭제할까요? 되돌릴 수 없어요.', '영구 삭제'))) return;
+            let r = await g.cloud.deleteAccount();
+            if (r === 'reauth') {
+              this.toasts.show('보안을 위해 한 번 더 로그인해 주세요.', 'info');
+              if (await g.cloud.reauthenticate()) r = await g.cloud.deleteAccount();
+            }
+            this.toasts.show(r === 'ok' ? '계정과 클라우드 데이터를 삭제했어요.' : '계정을 삭제하지 못했어요. 다시 시도해 주세요.', r === 'ok' ? 'good' : 'warn');
+          },
           reset: async () => {
-            if (!(await this.sheets.confirm('모든 플레이 데이터를 지울까요? 되돌릴 수 없어요.', '초기화'))) return;
+            if (!(await this.sheets.confirm(`이 기기의 모든 플레이 데이터를 지울까요? 되돌릴 수 없어요.${g.cloud.user ? '<br/><small>계정은 로그아웃되고, 클라우드 저장 데이터는 지워지지 않아요.</small>' : ''}`, '초기화'))) return;
             if (!(await this.sheets.confirm('정말로 처음부터 다시 시작할까요?', '처음부터'))) return;
+            // never let a wiped local save overwrite the cloud copy
+            if (g.cloud.user) await g.cloud.signOut();
             await g.saver.reset();
             g.setState(createDefaultState());
             await g.saveNow();
@@ -727,6 +759,55 @@ export class Panels {
           },
         });
       },
+    });
+  }
+
+  private accountHtml(): string {
+    const c = this.game.cloud;
+    if (!c.enabled) return '';
+    if (!c.user) preloadFirebase();
+    const statusText: Record<string, string> = {
+      signedOut: '연동 안 됨',
+      syncing: '동기화 중…',
+      synced: c.lastSync ? `저장됨 ${new Date(c.lastSync).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '연동됨',
+      error: '동기화 오류',
+      off: '',
+    };
+    if (!c.user)
+      return `<h3 class="section">계정</h3>
+        <div class="account"><p>지금은 <b>게스트</b>로 플레이 중이에요. Google 계정을 연동하면 앱을 지우거나 기기를 바꿔도 이어서 할 수 있어요.</p>
+        <button class="btn primary wide google-btn" data-act="link" ${c.status === 'syncing' ? 'disabled' : ''}><span class="g-logo">G</span>Google 계정 연동</button>
+        ${c.status === 'error' ? `<p class="note warn">${escapeHtml(c.error)}</p>` : ''}</div>`;
+    return `<h3 class="section">계정</h3>
+      <div class="account"><div class="row between"><span><b>${escapeHtml(c.user.name ?? 'Google 계정')}</b><br/><small>${escapeHtml(c.user.email ?? '')}</small></span><span class="sync ${c.status}">${statusText[c.status]}</span></div>
+      ${c.status === 'error' ? `<p class="note warn">${escapeHtml(c.error)}</p>` : ''}
+      <div class="row gap wrap"><button class="btn small" data-act="syncnow" ${c.status === 'syncing' ? 'disabled' : ''}>지금 클라우드에 저장</button><button class="btn small ghost" data-act="signout">로그아웃</button><button class="btn small ghost danger" data-act="delacct">계정 삭제</button></div></div>`;
+  }
+
+  /** Ask which save to keep when the cloud copy and this device differ. */
+  chooseSave(local: SaveSummary, cloud: SaveSummary): Promise<Choice> {
+    const fmtAt = (t: number) => (t ? new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-');
+    const card = (k: Choice, title: string, s: SaveSummary) => `<button class="save-pick" data-act="pick" data-k="${k}"><b>${title}</b><span>플레이어 Lv.${s.playerLevel} · 카페 Lv.${s.cafeLevel}</span><span><i class="ico">${ICON.coin}</i>${fmt(s.gold)} · ${s.days}일차</span><small>마지막 저장 ${fmtAt(s.at)}</small></button>`;
+    return new Promise((res) => {
+      let done = false;
+      const h = this.sheets.open({
+        title: '어떤 데이터로 할까요?',
+        cls: 'dialog',
+        render: (body) => {
+          body.innerHTML = `<p class="dlg-msg">클라우드와 이 기기의 플레이 데이터가 달라요. 계속할 데이터를 골라 주세요.<br/><small>선택하지 않은 쪽은 덮어써져요.</small></p>
+            <div class="save-picks">${card('cloud', '클라우드', cloud)}${card('local', '이 기기', local)}</div>`;
+          bindActs(body, {
+            pick: (b) => {
+              done = true;
+              res(b.dataset.k as Choice);
+              h.close();
+            },
+          });
+        },
+        onClose: () => {
+          if (!done) res('local');
+        },
+      });
     });
   }
 

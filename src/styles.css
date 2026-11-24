@@ -449,3 +449,17 @@ b { font-weight: normal; }
   .tut { top: calc(var(--sat) + 96px); }
   .sheet-wrap.tall .sheet { height: 92%; }
 }
+
+/* account */
+.account { background: #fffaf0; border-radius: var(--r); padding: 12px; box-shadow: var(--shadow-s); display: flex; flex-direction: column; gap: 10px; }
+.account p { margin: 0; font-size: 0.92rem; line-height: 1.5; }
+.google-btn { background: #fff; color: var(--ink); box-shadow: 0 3px 0 var(--beige2), var(--shadow-s); margin-top: 0; }
+.g-logo { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: bold; color: #fff; background: conic-gradient(#ea4335 0 25%, #fbbc05 0 50%, #34a853 0 75%, #4285f4 0); }
+.sync { font-size: 0.8rem; padding: 4px 10px; border-radius: 10px; background: var(--beige); white-space: nowrap; }
+.sync.synced { background: #e7edd5; color: var(--olive-d); }
+.sync.error { background: #fbe3d6; color: #a2503c; }
+.save-picks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.save-pick { display: flex; flex-direction: column; gap: 4px; padding: 14px 10px; border-radius: var(--r); background: #fffaf0; box-shadow: var(--shadow-s), inset 0 0 0 2px var(--beige); text-align: left; font-size: 0.88rem; }
+.save-pick b { font-size: 1.1rem; color: var(--brown); }
+.save-pick .ico { width: 15px; height: 15px; }
+.save-pick:active { box-shadow: inset 0 0 0 3px var(--olive); }

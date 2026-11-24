@@ -68,6 +68,7 @@ async function boot() {
     if (id === 'levelinfo') panels.levelInfo();
   };
   hud.onPause = () => panels.pause();
+  game.cloud.ask = (local, cloud) => panels.chooseSave(local, cloud);
 
   const back = (): boolean => {
     if (game.minigameOpen) {
@@ -100,6 +101,7 @@ async function boot() {
   // Debug hooks for automated tests: only with ?debug=1 or VITE_ENABLE_DEBUG=true. Never shown to players.
   if (new URLSearchParams(location.search).has('debug') || import.meta.env.VITE_ENABLE_DEBUG === 'true') {
     (window as any).__game = { game, panels, sheets, hud };
+    if (import.meta.env.VITE_FIREBASE_EMULATOR === 'true') import('./platform/firebase').then((m) => ((window as any).__fb = m));
   }
 
   loading.classList.add('done');

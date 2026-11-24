@@ -14,6 +14,7 @@ import { Player, HAND_CAPACITY } from './player';
 import { CustomerManager, type Customer } from './customers';
 import { StaffManager } from './staff';
 import { EditController } from './edit';
+import { CloudSync } from './cloud';
 import { MinigameHost } from '../minigames/host';
 import { MENU_BY_ID, masteryLevel, gradeOf, type StepId } from '../data/menu';
 import { FURNITURE_BY_ID, THEME_BY_ID } from '../data/furniture';
@@ -59,6 +60,7 @@ export class Game {
   customers: CustomerManager;
   staff: StaffManager;
   edit: EditController;
+  cloud: CloudSync;
   mg: MinigameHost;
   hooks!: UIHooks;
   furnitureGroup = new THREE.Group();
@@ -83,6 +85,7 @@ export class Game {
     this.customers = new CustomerManager(this);
     this.staff = new StaffManager(this);
     this.edit = new EditController(this);
+    this.cloud = new CloudSync(this);
     this.mg = new MinigameHost(uiRoot);
     this.marker = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 24), new THREE.MeshBasicMaterial({ color: 0x8a9a5b, transparent: true, opacity: 0.8, depthWrite: false }));
     this.marker.rotation.x = -Math.PI / 2;
@@ -114,15 +117,16 @@ export class Game {
     events.on('album', () => this.markDirty());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
-        this.saveNow();
+        this.saveNow().then(() => this.cloud.flush());
         audio.suspend();
         if (this.day.open) this.paused = true;
       } else audio.resume();
     });
-    window.addEventListener('pagehide', () => this.saveNow());
+    window.addEventListener('pagehide', () => this.saveNow().then(() => this.cloud.flush()));
     window.addEventListener('resize', () => this.stage.resize());
     this.last = performance.now();
     requestAnimationFrame(this.loop);
+    this.cloud.init();
   }
 
   setState(state: GameState) {
@@ -207,7 +211,9 @@ export class Game {
   }
   async saveNow() {
     this.dirty = false;
+    this.state.savedAt = Date.now();
     await this.saver.save(this.state);
+    this.cloud.schedule();
   }
 
   // ------------------------------------------------------------------ loop
@@ -301,7 +307,7 @@ export class Game {
     this.tableFood.clear();
     events.emit('hands', undefined);
     events.emit('dayState', { open: false });
-    this.saveNow();
+    this.saveNow().then(() => this.cloud.flush());
     this.hooks.showSettlement(sum);
   }
 

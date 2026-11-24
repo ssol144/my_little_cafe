@@ -12,18 +12,22 @@
     "cap:sync": "npm run build && npx cap sync android",
     "android:apk": "npm run cap:sync && cd android && ./gradlew assembleDebug",
     "test:systems": "node scripts/e2e-systems.mjs",
-    "android:assets": "node scripts/gen-android-assets.mjs"
+    "android:assets": "node scripts/gen-android-assets.mjs",
+    "test:cloud": "node scripts/e2e-cloud.mjs"
   },
   "dependencies": {
+    "@capacitor-firebase/authentication": "^8.6.0",
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.6.2",
     "@fontsource/jua": "^5.3.0",
+    "firebase": "^12.19.0",
     "three": "^0.187.0"
   },
   "devDependencies": {
     "@capacitor/android": "^8.6.2",
     "@capacitor/cli": "^8.6.2",
     "@types/three": "^0.187.0",
+    "firebase-tools": "^15.37.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
   },

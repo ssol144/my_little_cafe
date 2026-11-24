@@ -15,3 +15,9 @@ android/app/release/
 *.jks
 release/
 e2e-output/
+!android/app/debug.keystore
+
+# Firebase emulator / CLI
+firebase-debug.log
+firestore-debug.log
+.firebase/
